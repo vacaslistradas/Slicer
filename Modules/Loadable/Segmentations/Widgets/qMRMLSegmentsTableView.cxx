@@ -71,6 +71,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QModelIndex>
+#include <QMouseEvent>
 #include <QSettings>
 #include <QStringList>
 #include <QTimer>
@@ -221,6 +222,9 @@ public:
   /// Use terminology selector if UseTerminologySelectorSettingsKey is empty
   bool NoSettingsUseTerminologySelector{ false };
   bool TerminologySelectorAutoDisable{ true };
+  
+  /// For drag and drop functionality
+  int DragStartRow{ -1 };
 };
 
 //-----------------------------------------------------------------------------
@@ -358,6 +362,121 @@ qMRMLSegmentsTableView::qMRMLSegmentsTableView(QWidget* _parent)
 
 //-----------------------------------------------------------------------------
 qMRMLSegmentsTableView::~qMRMLSegmentsTableView() = default;
+
+//-----------------------------------------------------------------------------
+void qMRMLSegmentsTableView::mousePressEvent(QMouseEvent* event)
+{
+  Q_D(qMRMLSegmentsTableView);
+  
+  // Check if the mouse is over the table
+  QPoint tablePos = d->SegmentsTable->mapFromGlobal(event->globalPos());
+  if (!d->SegmentsTable->rect().contains(tablePos))
+  {
+    qMRMLWidget::mousePressEvent(event);
+    return;
+  }
+  
+  if (event->button() == Qt::LeftButton)
+  {
+    QModelIndex index = d->SegmentsTable->indexAt(tablePos);
+    if (index.isValid())
+    {
+      d->DragStartRow = index.row();
+    }
+  }
+  
+  qMRMLWidget::mousePressEvent(event);
+}
+
+//-----------------------------------------------------------------------------
+void qMRMLSegmentsTableView::mouseMoveEvent(QMouseEvent* event)
+{
+  Q_D(qMRMLSegmentsTableView);
+  
+  if (!(event->buttons() & Qt::LeftButton))
+  {
+    qMRMLWidget::mouseMoveEvent(event);
+    return;
+  }
+  
+  if (d->DragStartRow < 0)
+  {
+    qMRMLWidget::mouseMoveEvent(event);
+    return;
+  }
+  
+  // Visual feedback
+  d->SegmentsTable->setCursor(Qt::ClosedHandCursor);
+  
+  qMRMLWidget::mouseMoveEvent(event);
+}
+
+//-----------------------------------------------------------------------------
+void qMRMLSegmentsTableView::mouseReleaseEvent(QMouseEvent* event)
+{
+  Q_D(qMRMLSegmentsTableView);
+  
+  d->SegmentsTable->setCursor(Qt::ArrowCursor);
+  
+  if (d->DragStartRow >= 0 && event->button() == Qt::LeftButton)
+  {
+    QPoint tablePos = d->SegmentsTable->mapFromGlobal(event->globalPos());
+    QModelIndex index = d->SegmentsTable->indexAt(tablePos);
+    if (index.isValid())
+    {
+      int targetRow = index.row();
+      
+      if (targetRow != d->DragStartRow)
+      {
+        this->moveSegmentRow(d->DragStartRow, targetRow);
+      }
+    }
+  }
+  
+  d->DragStartRow = -1;
+  qMRMLWidget::mouseReleaseEvent(event);
+}
+
+//-----------------------------------------------------------------------------
+void qMRMLSegmentsTableView::moveSegmentRow(int from, int to)
+{
+  Q_D(qMRMLSegmentsTableView);
+  
+  if (!d->SegmentationNode || !d->SegmentationNode->GetSegmentation())
+  {
+    return;
+  }
+  
+  if (from == to)
+  {
+    return;
+  }
+  
+  vtkSegmentation* segmentation = d->SegmentationNode->GetSegmentation();
+  
+  // Get the segment ID at the source position
+  std::string segmentID = segmentation->GetNthSegmentID(from);
+  if (segmentID.empty())
+  {
+    return;
+  }
+  
+  // Adjust target index if moving down
+  int targetIndex = to;
+  if (from < to)
+  {
+    // When moving down, we need to account for the removal of the source row
+    targetIndex = to;
+  }
+  
+  // Move the segment
+  segmentation->SetSegmentIndex(segmentID, targetIndex);
+  
+  // Select the moved segment
+  this->setSelectedSegmentIDs(QStringList() << QString::fromStdString(segmentID));
+  
+  qDebug() << "Moved segment" << QString::fromStdString(segmentID) << "from row" << from << "to row" << to;
+}
 
 //-----------------------------------------------------------------------------
 void qMRMLSegmentsTableView::setSegmentationNode(vtkMRMLNode* node)

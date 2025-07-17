@@ -272,6 +272,15 @@ protected:
   bool userSetCustomNameOrColor();
 
 protected:
+  /// Handle mouse events for drag and drop
+  void mousePressEvent(QMouseEvent* event) override;
+  void mouseMoveEvent(QMouseEvent* event) override;
+  void mouseReleaseEvent(QMouseEvent* event) override;
+  
+  /// Move a row from one position to another
+  void moveSegmentRow(int from, int to);
+
+protected:
   QScopedPointer<qMRMLSegmentsTableViewPrivate> d_ptr;
 
 private:

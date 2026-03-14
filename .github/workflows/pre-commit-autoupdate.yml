@@ -21,19 +21,36 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Check prerequisites
+        id: prereq
+        env:
+          SLICER_APP_ID: ${{ vars.SLICER_APP_ID }}
+          SLICER_APP_PRIVATE_KEY: ${{ secrets.SLICER_APP_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$SLICER_APP_ID" || -z "$SLICER_APP_PRIVATE_KEY" ]]; then
+            echo "::warning ::Skipping auto-update because SLICER_APP_ID or SLICER_APP_PRIVATE_KEY is not configured for this repository."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
         id: app-token
+        if: ${{ steps.prereq.outputs.enabled == 'true' }}
         with:
           app-id: ${{ vars.SLICER_APP_ID }}
           private-key: ${{ secrets.SLICER_APP_PRIVATE_KEY }}
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        if: ${{ steps.prereq.outputs.enabled == 'true' }}
         with:
           python-version: 3.12
 
-      - run: pip install pre-commit
+      - if: ${{ steps.prereq.outputs.enabled == 'true' }}
+        run: pip install pre-commit
 
       - name: pre-commit autoupdate
+        if: ${{ steps.prereq.outputs.enabled == 'true' }}
         run: |
           # To ensure the output only contain lines like the following:
           #  `Updating https://github.com/org/user ... updating v1.2.3 -> v1.2.4`
@@ -45,6 +62,7 @@ jobs:
           pre-commit autoupdate --config .pre-commit-config.yaml | tee /tmp/pre-commit-autoupdate.log
 
       - name: Save parse-autoupdate.py
+        if: ${{ steps.prereq.outputs.enabled == 'true' }}
         run: |
           cat <<EOF >> /tmp/parse-autoupdate.py
           import re
@@ -61,6 +79,7 @@ jobs:
 
       - name: Parse autoupdate output
         id: parse-autoupdate
+        if: ${{ steps.prereq.outputs.enabled == 'true' }}
         run: |
           {
             echo 'AUTOUPDATE_LOG<<EOF'
@@ -71,6 +90,7 @@ jobs:
         shell: bash
 
       - uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
+        if: ${{ steps.prereq.outputs.enabled == 'true' }}
         with:
           token: ${{ steps.app-token.outputs.token }}
           commit-message: |
